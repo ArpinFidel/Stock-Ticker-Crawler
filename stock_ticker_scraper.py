@@ -10,8 +10,6 @@ import datetime
 import os
 import pandas
 
-tickers = {}
-
 class init_browser(object):
 	def __enter__(self):
 		runPath = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +47,7 @@ class init_browser(object):
 				}
 
 		args = [
-				# 'headless',
+				'headless',
 				'--silent',
 				'--disable-gpu',
 				'--disable-notifications',
@@ -73,12 +71,6 @@ class init_browser(object):
 	def __exit__(self, type, value, traceback):
 		self.browser.quit()
 
-class Ticker:
-	class Data:
-		pass
-	def __init__(self, ticker):
-		self.ticker = ticker
-		
 def get_new_company_data(browser):
 	with silence.no_stdout():
 		companies = get_company_data(browser)
@@ -210,16 +202,20 @@ def get_new_ticker_data(browser, targetDate):
 		
 		time.sleep(5)
 
-def get_ticker_data(browser, downloadPath, targetDate):
+def get_ticker_data(browser, downloadPath, targetDate, tickers):
 	filePath = 'lib\\downloads\\Ringkasan Saham-' + targetDate.strftime('%Y%m%d.xlsx')
 	try:
 		# file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:I,L:N')
-		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J')
+		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J', index_col=0, header=0)
 	except FileNotFoundError as fe:
 		get_new_ticker_data(browser, targetDate)
 		# file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:I,L:N')
-		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J')
-	return file
+		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J', index_col=0, header=0)
+	for row in file.iterrows():
+		if row[0] not in tickers:
+			tickers[row[0]] = {}
+		
+		tickers[row[0]][targetDate] = (row[1]['Open Price'], row[1]['First Trade'], row[1]['Tertinggi'], row[1]['Terendah'], row[1]['Penutupan'])
 		
 if __name__ == '__main__':
 	
@@ -227,9 +223,12 @@ if __name__ == '__main__':
 	
 	companies, companiesLastUpdate = get_company_data()
 	
-	with silence.nostdout(), init_browser() as (browser, downloadPath), pandas.option_context('display.max_rows', None, 'display.max_columns', None):
-		file = get_ticker_data(browser, downloadPath, datetime.date(2017,1,20))
-		print(file)
+	# tickers = pandas.DataFrame({'Open Price':[],'First Trade':[],'Tertinggi':[],'Terendah':[],'Penutupan':[],})
+	tickers = {}
+	
+	with init_browser() as (browser, downloadPath), pandas.option_context('display.max_rows', None, 'display.max_columns', None):
+		get_ticker_data(browser, downloadPath, datetime.date(2017,1,20), tickers)
+		print(tickers['AALI'][datetime.date(2017,1,20)])
 	
 	menu = {
 		1:'Update company list',
