@@ -1,16 +1,15 @@
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import Select
-from lib.stock_company_data_crawler import *
+from lib.stock_company_data_scraper import *
 from lib import silence
 from time import sleep
 
 import contextlib
 import datetime
 import os
+import pandas
 
-companies = []
-companiesLastUpdate = datetime.date(1,1,1)
 tickers = {}
 
 class init_browser(object):
@@ -81,9 +80,6 @@ class Ticker:
 		self.ticker = ticker
 		
 def get_new_company_data(browser):
-	global companies
-	global companiesLastUpdate
-
 	with silence.no_stdout():
 		companies = get_company_data(browser)
 	
@@ -91,15 +87,25 @@ def get_new_company_data(browser):
 		companyFile.write('%s\n' % (datetime.date.isoformat(datetime.date.today())))
 		for c in companies:
 			companyFile.write('%s^%s^%s^%s^%s\n' % (c.code, c.name, c.recDate, c.stock, c.board))
-
+	
+	return companies, datetime.date.today()
+	
 def read_company_data():
-	global companies
-	global companiesLastUpdate
 	with open('.\\lib\\companies.txt', 'r') as companyFile:
 		companiesLastUpdate = datetime.date.fromisoformat(companyFile.readline().strip())
 		companies = [Company(c.split('^')) for c in companyFile.read().splitlines()]
+	return companies, companiesLastUpdate
 
-def download_ticker_data(browser, targetDate):
+def get_company_data():
+	try:
+		companies, companiesLastUpdate = read_company_data()
+	except FileNotFoundError as fe:
+		print('Data not found locally. Downloading data')
+		with silence.no_stdout(), init_browser()[0] as browser:
+			companies, companiesLastUpdate = get_new_company_data(browser)
+	return companies, companiesLastUpdate
+
+def get_new_ticker_data(browser, targetDate):
 	
 		url = 'https://idx.co.id/data-pasar/ringkasan-perdagangan/ringkasan-saham/'
 		browser.get(url)
@@ -204,30 +210,26 @@ def download_ticker_data(browser, targetDate):
 		
 		time.sleep(5)
 
-def get_new_ticker_data(browser, downloadPath, targetDate):
-		download_ticker_data(browser, targetDate)
-		filePath = max([downloadPath +'\\'+ f for f in os.listdir(downloadPath)], key=os.path.getctime)
-		with open(filePath, 'r') as file:
-			# TODO
-			pass
-	
-	
+def get_ticker_data(browser, downloadPath, targetDate):
+	filePath = 'lib\\downloads\\Ringkasan Saham-' + targetDate.strftime('%Y%m%d.xlsx')
+	try:
+		# file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:I,L:N')
+		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J')
+	except FileNotFoundError as fe:
+		get_new_ticker_data(browser, targetDate)
+		# file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:I,L:N')
+		file = pandas.read_excel(filePath, skiprows=1, usecols='B,F:J')
+	return file
+		
 if __name__ == '__main__':
 	
 	print('Loading company list...')
 	
-	try:
-		read_company_data()
-	except FileNotFoundError as fe:
-		print('Data not found locally. Downloading data')
-		with silence.no_stdout():
-			with init_browser()[0] as browser:
-				print('asdf')
-				get_new_company_data(browser)
+	companies, companiesLastUpdate = get_company_data()
 	
-	# with silence.no_stdout():
-	with init_browser() as (browser, downloadPath):
-		get_new_ticker_data(browser, downloadPath, datetime.date(2017,1,20))
+	with silence.nostdout(), init_browser() as (browser, downloadPath), pandas.option_context('display.max_rows', None, 'display.max_columns', None):
+		file = get_ticker_data(browser, downloadPath, datetime.date(2017,1,20))
+		print(file)
 	
 	menu = {
 		1:'Update company list',
